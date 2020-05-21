@@ -1,0 +1,648 @@
+---
+title: "PTP1-MPS-Overview"
+author: "Catherine Wong"
+output: 
+  html_document: 
+    keep_md: yes
+---
+This is an overview of Phase 1 Microplastics Data for Pollution Tracker
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, tidy = TRUE) 
+```
+
+### Data  
+
+```{r, echo = FALSE}
+library("dplyr")
+library("tidyverse")
+library("stringr")
+library("ggplot2")
+library("forcats")
+library("knitr")
+library("kableExtra")
+opts_knit$set(root.dir = "C:/Users/Cath Wong/Desktop/PTP/PTP1 Data/Data")
+```
+
+
+```{r, results='hold', echo = FALSE}
+datS <- read.csv("ptp1_sediments_R_Extraction_FTIR_Results_CW.csv", na.strings="") %>% 
+  select(site, area, shape, color, long_axis, short_axis, susp_plastic, ftir, final_name_particle, origin_particle, category_particle, group_particle, ftir_particle_id) %>% 
+  filter(!area %in% c("remove"))
+
+datM <- read.csv("ptp1_mussels_R_Extraction_FTIR_Results_CW.csv", na.strings="") %>% 
+  filter(shape != "0") %>% 
+  select(site, area, shape, color, long_axis, short_axis, susp_plastic, ftir, final_name_particle, origin_particle, category_particle, group_particle, ftir_particle_id) 
+
+wts <- read.csv("ptp1_mussels_extraction_data.csv", na.strings="") %>% 
+  select(site, sample, tis_ww, microscope_done) %>% 
+  filter(microscope_done=="y")
+
+sub <- kable((datS[148:158, ])) %>% 
+  kable_styling(bootstrap_options = "bordered")
+sub
+```
+
+
+### Summary
+#### __*Number of sites*__
+```{r Calculate number of sites, number of particles, number of plastics, include = FALSE}
+SMsites_table <- semi_join(datS, datM, by = "site")
+SMsites <- unique(SMsites_table$site)
+```
+
+There are __`r length(unique(datS$site))`__ sediment sites and __`r length(unique(datM$site))`__ mussel sites  
+There are __`r length(SMsites)`__ sites that sampled both sediment and mussels        
+  
+Each sediment sample is 50g of dry sediment per site.
+Each mussel sample is 8 blue mussels per site.
+
+
+__IN SEDIMENT:__  
+-	Out of `r sum(datS$susp_plastic == "yes")` suspected mps, 
+`r (sum(datS$ftir == "yes" & datS$susp_plastic == "yes")/sum(datS$susp_plastic == "yes"))*100` % were FTIR’d and 
+`r datS %>% tally(category_particle == "plastic" & susp_plastic == "yes")` of those suspected were confirmed to be plastic 
+```{r MPS Abundance in Sediment, echo = FALSE}
+corr <- datS %>% 
+  group_by(site) %>% 
+  tally (ftir=="no" & susp_plastic == "yes", name="suspNonFTIR") %>% 
+  mutate(suspNonFTIRCorr = suspNonFTIR*0.24) 
+
+mps_count_sed <- datS %>% 
+  group_by(site) %>% 
+  tally(category_particle=="plastic", name = "MPS_Count") %>% 
+  mutate(MPS_Corr=MPS_Count+corr$suspNonFTIRCorr) %>% 
+  mutate(MPS_CorrPerKG=MPS_Corr*20)
+```
+Average abundance was `r mean(mps_count_sed$MPS_CorrPerKG, na.rm=TRUE)` MP per kg dry weight sediment 
+
+
+__IN MUSSELS:__  
+-	Out of `r sum(datM$susp_plastic == "yes")` suspected mps, 
+`r (sum(datM$ftir == "yes" & datM$susp_plastic == "yes")/sum(datM$susp_plastic == "yes"))*100` % were FTIR’d and 
+`r datM %>% tally(category_particle == "plastic" & susp_plastic == "yes")` of those suspected were confirmed to be plastic 
+
+```{r Average Abundance in Mussels, echo = FALSE}
+corr_m <- datM %>% 
+  group_by(site) %>% 
+  tally (ftir=="no" & susp_plastic == "yes", name="suspNonFTIR") %>% 
+  mutate(suspNonFTIRCorr = suspNonFTIR*0.24)
+
+mps_count_mus <- datM %>% 
+  group_by(site) %>% 
+  tally(category_particle=="plastic", name = "MPS_Count") %>% 
+  mutate(MPS_Corr=MPS_Count+corr_m$suspNonFTIRCorr) %>% 
+  mutate(MPS_CorrPerMussel=MPS_Corr/8)
+
+wts_av<- wts %>% 
+  group_by(site) %>% 
+  summarize(mean_wt = mean(tis_ww, na.rm=TRUE))
+
+mps_count_mus_ww <- mps_count_mus %>% 
+  full_join(wts_av, by="site") %>% 
+  mutate(mps_ww = MPS_CorrPerMussel/mean_wt)
+```
+
+Average abundance was `r mean(mps_count_mus_ww$mps_ww, na.rm=TRUE)` MP or SMP per gram WW and 
+`r mean(mps_count_mus$MPS_CorrPerMussel)`  MP per individual (N = `r nrow(mps_count_mus)`)
+
+
+#### __*Particles count*__
+```{r, echo = FALSE}
+A <- sum(datS$susp_plastic != "no" | datS$ftir != "no") + sum(datM$susp_plastic != "no" | datM$ftir != "no")
+
+B <- sum(datS$susp_plastic == "yes" & datS$ftir == "yes") + sum(datM$susp_plastic == "yes" & datM$ftir == "yes")
+
+C <- sum(datS$susp_plastic == "yes") + sum(datM$susp_plastic == "yes")
+
+Da <- datS %>% 
+  filter(category_particle == "plastic") %>% 
+  tally()
+Db <- datM %>% 
+  filter(category_particle == "plastic") %>% 
+  tally()
+D <- Da$n + Db$n
+
+E <- sum(datS$ftir == "yes") + sum(datM$ftir == "yes")
+
+dt <- matrix(c(A, E, B, C, D), ncol=1, byrow=TRUE) 
+colnames(dt) <- c("Total") 
+rownames(dt) <- c("# particles",  "# FTIR'd", "# suspected + FTIR", "# suspected","# confirmed plastic")
+
+dt %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped",
+                                      "bordered"), 
+                full_width = F, 
+                position = "left")
+```
+The "Correction factor" calculated is:  
+confirmed plastic / suspected & FTIR'd = __`r (D/B)*100` %__
+
+I can now use this 24% value to estimate the number of plastics that were __suspected but not FTIR'd__ particles
+
+* This will only work if you are applying this % to a large n, because this value was also calculated from large n. It cannot be indicative of the amount of plastics if the n is small.  
+
+__Question:__ How to incorporate "false positives" and "false negatives". Should each individual have their own false negatives rate and it must be below 10%?
+
+__Question:__ How do you know at what population size you COULD use this correction %? Does it even make sense to use this method at all? Is there a statistical test we could use?
+
+### Shape & Plastic Type & Size Frequency  {.tabset .tabset-fade .tabset-pills}
+#### Shape
+Frequency of shapes 
+
+```{r, echo = FALSE}
+datScount <- datS %>% 
+  filter(susp_plastic == "yes") %>% 
+  count(shape) %>% 
+  mutate(freq = n / sum(n)*100)
+# datScount$group_particle <- fct_explicit_na(datScount$group_particle, na_level = "not_analyzed") 
+  
+ggplot(datScount, aes(x = reorder(shape, -n), y = n)) +
+  geom_histogram(stat = "identity") +
+  ggtitle("Frequency of Particles in Sediment") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 0.9, hjust = 0.9)) +
+  labs(x="Suspected Plastic Shape", y="Count in All Sediment Samples") +
+  geom_text(aes(y=n, label=n, vjust=-0.5))
+```
+  
+In suspected microplastics found in sediment, `r datScount[1, "freq"]` % were fibres, `r datScount[3, "freq"]`% were fragments, `r datScount[6, "freq"]`% were sheets, `r datScount[5, "freq"]`% were foam,  `r datScount[4, "freq"]`% were granule.
+
+```{r, echo = FALSE}
+datMcount <- datM %>% 
+  filter(susp_plastic == "yes") %>% 
+  count(shape)%>% 
+  mutate(freq = n / sum(n)*100)
+# datMcount$group_particle <- fct_explicit_na(datMcount$group_particle, na_level = "not_analyzed") 
+  
+ggplot(datMcount, aes(x = reorder(shape, -n), y = n)) +
+  geom_histogram(stat = "identity") +
+  ggtitle("Frequency of Particles in Mussels") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 0.9, hjust = 0.9)) +
+  labs(x="Suspected Plastic Shape", y="Count in All Mussel Samples") +
+  geom_text(aes(y=n, label=n, vjust=-0.5))
+
+```
+In suspected microplastics found in mussels, `r datMcount[1, "freq"]` % were fibres, `r datMcount[3, "freq"]`% were fragments, `r datMcount[8, "freq"]`% were sheets, `r datMcount[4, "freq"]`% were granule.
+
+#### Colour
+__Colour Frequency in Sediment__
+```{r, echo = FALSE}
+datScolor <- datS %>% 
+  filter(susp_plastic == "yes") %>% 
+  count(color, na.rm=TRUE) %>% 
+  mutate(freq = n / sum(n)*100)
+
+ggplot(datScolor, aes(x = reorder(color, -n), y = n)) +
+  geom_histogram(stat = "identity") +
+  ggtitle("Frequency of Colours in Sediment") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 0.9, hjust = 0.9)) +
+  labs(x="Colour", y="Count in All Sediment Samples") +
+  geom_text(aes(y=n, label=n, vjust=-0.5))
+```
+
+__Colour Frequency in Mussel__
+```{r, echo = FALSE}
+datMcolor <- datM %>% 
+  filter(susp_plastic == "yes") %>% 
+  count(color, na.rm=TRUE) %>% 
+  mutate(freq = n / sum(n)*100)
+
+ggplot(datMcolor, aes(x = reorder(color, -n), y = n)) +
+  geom_histogram(stat = "identity") +
+  ggtitle("Frequency of Colours in Mussels") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 0.9, hjust = 0.9)) +
+  labs(x="Colour", y="Count in All Mussel Samples") +
+  geom_text(aes(y=n, label=n, vjust=-0.5))
+```
+
+### Calculating MPS Estimates for every site
+* __Question:__ Can we make *any* estimates based on the data? Or only from what has been observed and confirmed?
+
+```{r MPS COUNTS, echo = FALSE}
+### Sediment
+corr <- datS %>% 
+  group_by(site) %>% 
+  tally (ftir=="no" & susp_plastic == "yes", name="suspNonFTIR") %>% #Tallies suspected but not FTIR'd particles
+  mutate(suspNonFTIRCorr = suspNonFTIR*0.24) #Multiply suspected by correction factor "24% correct"
+
+mps_count_sed <- datS %>% 
+  group_by(site) %>% 
+  tally(category_particle=="plastic", name = "MPS_Count") %>% 
+  mutate(MPS_Corr=MPS_Count+corr$suspNonFTIRCorr) %>% 
+  mutate(MPS_CorrPerKG=MPS_Corr*20) %>% 
+  mutate(area = datS$area[match(site, datS$site)]) 
+
+### Mussels
+corr_m <- datM %>% 
+  group_by(site) %>% 
+  tally (ftir=="no" & susp_plastic == "yes", name="suspNonFTIR") %>% 
+  mutate(suspNonFTIRCorr = suspNonFTIR*0.24)
+
+mps_count_mus <- datM %>% 
+  group_by(site) %>% 
+  tally(category_particle=="plastic", name = "MPS_Count") %>% 
+  mutate(MPS_Corr=MPS_Count+corr_m$suspNonFTIRCorr) %>% 
+  mutate(MPS_CorrPerMussel=MPS_Corr/8) %>% 
+  mutate(area = datM$area[match(site, datM$site)]) 
+
+kable(head(corr)) %>% 
+        kable_styling(bootstrap_options = c("striped",
+                                            "bordered"),
+  full_width = F, position = "float_left")
+
+kable(head(mps_count_sed)) %>% 
+        kable_styling(bootstrap_options = c("striped",
+                                            "bordered"),
+  full_width = F, position = "right")
+```
+
+### Calculating MPS Estimates for every Area  {.tabset .tabset-fade .tabset-pills}
+#### All areas
+* __Next step:__ Determine significant differences between areas  
+    + If estimates cannot be made, then there isn't a way to determine if areas are significantly different
+*Consider changing MPS count from "per mussel" to "per tissue wet wt"
+
+```{r MPS ESTIMATES BY AREA Sediment, echo = FALSE, out.width="65%"}
+### Sediment
+area_total <- mps_count_sed %>% 
+  group_by(area) %>% 
+  tally() %>% 
+  mutate(label = paste0("n=", n))
+
+area_means <- mps_count_sed %>% 
+  group_by(area) %>% 
+  summarise(
+    mean = mean(MPS_CorrPerKG),
+    se = sd(MPS_CorrPerKG, na.rm=TRUE)/sqrt(length(MPS_CorrPerKG))
+  ) %>% 
+  full_join(area_total, by="area")
+
+area_means[is.na(area_means)] <- 0
+
+kable(head(area_means)) %>%
+    kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                  position= "float_right",
+                  full_width = F)
+    
+plot_area_means <- ggplot(area_means, aes(x = area, y = mean)) + 
+  geom_bar(stat = "identity") +
+  labs(x="Area", y="Microplastics Count Per 1kg Dry Sediment", tag="(a)") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se),
+    width=0.2) +
+  geom_text(aes(y=mean+se, label=label, vjust=-1)) +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))
+
+plot_area_means
+ggsave("plot_area_means.jpeg")     
+
+```
+
+```{r MPS ESTIMATES BY AREA Mussel, echo = FALSE, out.width="60%"}
+### Mussels
+area_total_m <- mps_count_mus %>% 
+  group_by(area) %>% 
+  tally() %>% 
+  mutate(label = paste0("n=", n))
+
+area_means_m <- mps_count_mus %>% 
+  group_by(area) %>% 
+  summarise(
+        mean = mean(MPS_CorrPerMussel),
+    se = sd(MPS_CorrPerMussel, na.rm=TRUE)/sqrt(length(MPS_CorrPerMussel))
+  ) %>% 
+  full_join(area_total_m, by="area")
+
+area_means_m[is.na(area_means_m)] <- 0
+
+kable(head(area_means_m)) %>%
+    kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                  position= "float_right",
+                  full_width = F)
+
+plot_area_means_m <- ggplot(area_means_m, aes(x = area, y = mean)) +
+  geom_bar(stat = "identity") +
+  labs(x="Area", y="Microplastics Count Per Mussel", tag="(b)") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se),
+    width=0.2) +
+  geom_text(aes(y=mean+se, label=label, vjust=-1)) +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))
+
+plot_area_means_m 
+ggsave("plot_area_means_m.jpeg")
+```
+
+#### Matched sites within areas
+__Next step:__ Is there a relationship between sediment and mussels? (does not look like it at first glance. What test to use?)
+
+```{r, echo = FALSE, out.width="65%"}
+#### SEDIMENT 
+mps_count_sed_match <- mps_count_sed %>% 
+  filter(site %in% SMsites) 
+
+area_total_match <- mps_count_sed_match %>% 
+  group_by(area) %>% 
+  tally() %>% 
+  mutate(label = paste0("n=", n))
+
+area_means_match <- mps_count_sed_match  %>% 
+  group_by(area) %>% 
+    summarise(
+    se = sd(MPS_CorrPerKG, na.rm=TRUE)/sqrt(length(MPS_CorrPerKG)),
+    mean = mean(MPS_CorrPerKG)
+  ) %>% 
+   full_join(area_total_match, by="area")
+
+area_means_match[is.na(area_means_match)] <- 0
+
+kable(head(area_means_match)) %>%
+    kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                  position= "float_right",
+                  full_width = F)
+
+plot_area_means_match <- ggplot(area_means_match, aes(x = area, y = mean)) +
+  geom_bar(stat = "identity") +
+  labs(x="Area", y="Microplastics Count Per 1kg Dry Sediment", tag="(a)") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se),
+    width=0.2) +
+  geom_text(aes(y=mean+se, label=label, vjust=-1)) +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))
+
+plot_area_means_match
+ggsave("plot_area_means_match.jpeg")
+```
+
+
+```{r, echo = FALSE, out.width="60%"}
+
+#### MUSSELS ####
+mps_count_mus_match <- mps_count_mus %>% 
+  filter(site %in% SMsites) 
+
+area_total_match_m <- mps_count_mus_match %>% 
+  group_by(area) %>% 
+  tally() %>% 
+  mutate(label = paste0("n=", n))
+
+area_means_match_m <- mps_count_mus_match %>% 
+  group_by(area) %>% 
+    summarise(
+    se = sd(MPS_CorrPerMussel, na.rm=TRUE)/sqrt(length(MPS_CorrPerMussel)),
+    mean = mean(MPS_CorrPerMussel)
+  ) %>% 
+ full_join(area_total_match_m, by="area")
+
+area_means_match_m[is.na(area_means_match_m)] <- 0
+
+kable(head(area_means_match_m)) %>%
+    kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                  position= "float_right",
+                  full_width = F)
+
+plot_area_means_match_m <- ggplot(area_means_match_m, aes(x = area, y = mean)) +
+  geom_bar(stat = "identity") +
+  labs(x="Area", y="Microplastics Count Per Mussel", tag="(b)") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se),
+    width=0.2) +
+  geom_text(aes(y=mean+se, label=label, vjust=-1)) +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))
+
+plot_area_means_match_m
+ggsave("plot_area_means_match_m.jpeg")
+```
+
+#### Mussels standardized for size
+```{r, echo = FALSE}
+wts_av <- wts %>% 
+  group_by(site) %>% 
+  summarize(mean_wt = mean(tis_ww, na.rm=TRUE))
+
+mps_count_mus_ww <- mps_count_mus %>% 
+  full_join(wts_av, by="site") %>% 
+  mutate(mps_ww = MPS_Corr/mean_wt)
+
+mps_area_mus_ww <- mps_count_mus_ww %>% 
+  group_by(area) %>% 
+  summarize(se = sd(mps_ww, na.rm=TRUE)/sqrt(length(mps_ww)),
+    mean = mean(mps_ww, na.rm=TRUE))
+
+plot_mus_area_ww <- ggplot(mps_area_mus_ww, aes(x = area, y = mean)) + 
+                  labs(x="Area", y="Mean Microplastics Count Per GWW of Mussel Tissue") +
+                  geom_bar(stat = "identity") +
+                  geom_errorbar(aes(ymin=mean-se, ymax=mean+se),
+                  width=0.2) +
+                  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))
+
+plot_mus_area_ww
+
+```
+
+### Calculating Proportions  {.tabset .tabset-fade .tabset-pills}
+Proportions are calculated from __confirmed / FTIR'd particles__.
+n = number of plastic particles  
+*__Note:__ n is quite low ... are these proportions meaningful?  
+*The number of particles is too low for proportions to be meaningful, to make a conclusion for the entire area. 
+
+
+
+#### All areas
+
+```{r, Plastics in Sed, include = FALSE}
+plastics <- datS %>% 
+  droplevels() %>% 
+  filter(final_name_particle != "na", category_particle == "plastic", area != "remove") %>% 
+  group_by(area, group_particle, .drop = FALSE) %>%
+  tally(name="Count") %>% 
+  mutate(label = paste0("n=", sum(Count)))
+
+plastics$group_particle <- factor(plastics$group_particle, levels = c("acrylic", "polyethylene",  "nylon", "polyester", "polystyrene", "rubber"))
+  
+plot_area_prop_plastypes  <- ggplot(plastics, 
+                            aes(x = area,
+                            y = Count,
+                            fill = group_particle)) +
+  ggtitle("Proportion of Plastic in Sediment") +
+  labs(x="Site", y="Proportion", tag="(a)") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))+
+ # scale_fill_discrete(breaks=c("rubber", "acrylic", "polyethylene", "nylon", "polystyrene", "polyester"), name="Plastic Type") +
+  geom_bar(stat="identity",
+  position = "fill") +
+  scale_fill_brewer(name = "Plastic Type", palette="Set2")  +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y=0.97, label=label, vjust=-1))
+
+plot_area_prop_plastypes
+```
+
+```{r, Plastics in Mussel, include = FALSE}
+plastics_m <- datM %>% 
+  droplevels() %>% 
+  filter(final_name_particle != "na", category_particle == "plastic", area != "remove") %>% 
+  group_by(area, group_particle, .drop = FALSE) %>%
+  tally(name="Count") %>% 
+  mutate(label = paste0("n=", sum(Count)))
+
+  
+plastics_m$group_particle <- factor(plastics_m$group_particle, levels = c("acrylic", "polyethylene",  "nylon", "polyester", "polystyrene", "rubber"))
+  
+plot_area_prop_plastypes_m  <- ggplot(plastics_m, 
+                            aes(x = area,
+                            y = Count,
+                            fill = group_particle)) +
+  ggtitle("Proportion of Plastic in Mussel") +
+  labs(x="Site", y="Proportion", tag="(b)") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))+
+ # scale_fill_discrete(breaks=c("rubber", "acrylic", "polyethylene", "nylon", "polystyrene", "polyester"), name="Plastic Type") +
+  geom_bar(stat="identity",
+  position = "fill") +
+    scale_fill_brewer(name = "Plastic Type", palette="Set2")  +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y=0.97, label=label, vjust=-1))
+  # coord_flip()
+  
+plot_area_prop_plastypes_m
+```
+
+#### Matched sites within areas
+```{r, Plastics in matching Sed, include = FALSE}
+plastics_match <- datS %>% 
+  filter(site %in% SMsites) %>% 
+  droplevels() %>% 
+  filter(final_name_particle != "na", category_particle == "plastic", area != "remove") %>% 
+  group_by(area, group_particle, .drop = FALSE) %>%
+  tally(name="Count") %>% 
+  mutate(label = paste0("n=", sum(Count)))
+
+plastics_match$group_particle <- factor(plastics_match$group_particle, levels = c("acrylic", "polyethylene",  "nylon", "polyester", "polystyrene", "rubber"))
+  
+plot_area_prop_plastypes_match  <- ggplot(plastics_match, 
+                            aes(x = area,
+                            y = Count,
+                            fill = group_particle)) +
+  ggtitle("Proportion of Plastic in Sediment") +
+  labs(x="Site", y="Proportion", tag="(a)") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 1.15, hjust = 1.1))+
+ # scale_fill_discrete(breaks=c("rubber", "acrylic", "polyethylene", "nylon", "polystyrene", "polyester"), name="Plastic Type") +
+  geom_bar(stat="identity",
+  position = "fill") +
+  scale_fill_brewer(name = "Plastic Type", palette="Set2")  +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y=0.97, label=label, vjust=-1))
+
+plot_area_prop_plastypes_match
+```
+
+```{r Plastics in matching Mus, include = FALSE}
+plastics_m_match <- datM %>% 
+  filter(site %in% SMsites) %>% 
+   droplevels() %>% 
+  filter(final_name_particle != "na", category_particle == "plastic") %>% 
+  group_by(area, group_particle, .drop = FALSE) %>%
+  tally(name="Count") %>% 
+  mutate(label = paste0("n=", sum(Count)))
+  
+plastics_m_match $group_particle <- factor(plastics_m_match $group_particle, levels = c("acrylic", "polyethylene", "nylon", "polyester"))
+  
+plot_match_area_prop_plastypes_m <- ggplot(plastics_m_match , 
+                            aes(x = area,
+                            y = Count,
+                            fill = group_particle)) +
+  ggtitle("Proportion of Plastic in Mussels") +
+  labs(x="Site", y="Proportion", tag="(a)") +
+  theme(axis.text.x = element_text(angle =45 , vjust = 0.9, hjust = 0.9))+
+  scale_fill_discrete(breaks=c("acrylic", "polyethylene", "nylon", "polyester"), name="Plastic Type") +
+  geom_bar(stat="identity",
+  position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y=0.97, label=label, vjust=-1))
+  # coord_flip()
+  
+plot_match_area_prop_plastypes_m
+```
+
+
+
+### Proportions of Plastic Types and Shapes
+
+```{r shapes, include=FALSE}
+shapes_s <- datS %>% 
+  group_by(shape) %>% 
+  tally(name = "shapecount_s") 
+
+shapes_m <- datM %>% 
+  group_by(shape) %>% 
+  tally(name = "shapecount_m") 
+
+shape_sm <- full_join(shapes_s, shapes_m, by = "shape")
+shape_sm[is.na(shape_sm)] <- 0
+
+shape_sm_long <- shape_sm %>% 
+  gather(key = "Matrix",
+        value = "Count", 
+        -c(shape)) 
+
+shapeplot <- ggplot(shape_sm_long, 
+  aes(x = Matrix, y = Count, 
+  fill = factor(shape, levels = c("pellet", "sheet", "microbead","fragment", "fibre")))) +
+  geom_bar(stat = "identity", 
+  position = "fill")
+
+shapeplot + theme_classic() +
+  scale_fill_manual(name="Shape",
+  labels = c("Pellet", "Sheet", "Microbead","Fragment", "Fibre"),
+  values=c("#ffa600", "#ff6361", "#bc5090", "#58508d", "#003f5c")) +
+  labs(y = "Proportion") +
+  scale_x_discrete(labels = c("Mussels", "Sediment")) +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size=16), 
+        axis.title.y = element_text(size=16),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size=14))
+```
+
+```{r FIBRE TYPES, include = FALSE}
+#### SEDIMENT ####
+fibre_s <- datS %>%
+  subset(shape == "fibre") %>% 
+  group_by(group_particle) %>% 
+  tally(name = "fibrecount_sed") 
+
+#### MUSSELS ####
+fibre_m <- datM %>%
+  subset(shape == "fibre") %>% 
+  group_by(group_particle) %>% 
+  tally(name = "fibrecount_mus") 
+
+### BOTH SED AND MUS ###
+fibre_sm <- full_join(fibre_m, fibre_s, by = "group_particle", na.rm=FALSE)
+fibre_sm[is.na(fibre_sm)] <- 0
+
+fibre_sm_long <- fibre_sm %>%  ######## Changes to long format
+  gather(key = "Matrix",
+        value = "FibreCount", 
+        -c(group_particle)) 
+
+
+plot_fibre_sm <- ggplot(fibre_sm_long, 
+  aes(x = Matrix, y = FibreCount, 
+      fill = factor(group_particle, 
+      levels = c("rubber", "acrylic", "polyethylene","nylon", "polyester", "cellulose")))) +
+  theme_classic() +              
+  geom_bar(stat = "identity",
+      position = "fill") + 
+  scale_fill_manual(name="Plastic Type",
+      labels = c("Rubber", "Acrylic", "Polyethylene","Nylon", "Polyester"),
+      values=c("#ffa600", "#ff6361", "#bc5090", "#58508d", "#003f5c")) +
+  labs(y = "Proportion") +
+  scale_x_discrete(labels = c("Mussels", "Sediment")) +
+  theme(axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      axis.title.x = element_text(size=16), 
+      axis.title.y = element_text(size=16),
+      legend.text = element_text(size = 12),
+      legend.title = element_text(size=14))
+
+##   position = position_dodge(width=0.9))
+
+```
